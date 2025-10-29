@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  ADMIN
+  PROFESSOR
+  ALUNO
+}
+
+enum CourseStatus {
+  PENDING
+  APPROVED
+  ARCHIVED
+}
+
+model Role {
+  id    Int      @id
+  name  RoleName @unique
+  users User[]
+}
+
+model User {
+  id           BigInt   @id @default(autoincrement())
+  name         String
+  email        String   @unique @db.VarChar(190)
+  passwordHash String
+  roleId       Int
+  role         Role     @relation(fields: [roleId], references: [id])
+  blocked      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relacionamentos
+  coursesTeaching Course[]     @relation("TeacherCourses")
+  enrollments     Enrollment[]
+  submissions     Submission[]
+  events          Event[]      @relation("OwnerEvents")
+  Course          Course[]
+}
+
+model Course {
+  id          Int          @id @default(autoincrement())
+  title       String
+  description String       @db.Text
+  category    String
+  status      CourseStatus @default(PENDING)
+  teacherId   BigInt? // professor associado para ficar disponível aos alunos
+  teacher     User?        @relation("TeacherCourses", fields: [teacherId], references: [id])
+  createdById BigInt // quem criou (professor)
+  createdBy   User         @relation(fields: [createdById], references: [id])
+
+  imageUrl String? @db.VarChar(500) // <- útil para os cards
+
+  lessons     Lesson[]
+  enrollments Enrollment[]
+  events      Event[]      @relation("CourseEvents")
+  evaluations Evaluation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([teacherId])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([category])
+}
+
+model Enrollment {
+  id        Int      @id @default(autoincrement())
+  userId    BigInt
+  courseId  Int
+  user      User     @relation(fields: [userId], references: [id])
+  course    Course   @relation(fields: [courseId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+model Lesson {
+  id          Int          @id @default(autoincrement())
+  courseId    Int
+  title       String
+  order       Int
+  videoUrl    String?
+  isPublished Boolean      @default(false)
+  course      Course       @relation(fields: [courseId], references: [id])
+  materials   Material[]
+  evaluations Evaluation[] // avaliações vinculadas à aula (opcional)
+}
+
+model Material {
+  id       Int    @id @default(autoincrement())
+  lessonId Int
+  filename String
+  path     String
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+}
+
+model Event {
+  id            Int      @id @default(autoincrement())
+  courseId      Int
+  title         String
+  startDatetime DateTime
+  endDatetime   DateTime
+  createdById   BigInt
+  course        Course   @relation("CourseEvents", fields: [courseId], references: [id])
+  createdBy     User     @relation("OwnerEvents", fields: [createdById], references: [id])
+
+  @@index([courseId])
+  @@index([createdById])
+}
+
+model Evaluation {
+  id          Int          @id @default(autoincrement())
+  courseId    Int
+  lessonId    Int?
+  title       String
+  schemaJson  Json // estrutura do formulário
+  isPublished Boolean      @default(false)
+  course      Course       @relation(fields: [courseId], references: [id])
+  lesson      Lesson?      @relation(fields: [lessonId], references: [id])
+  submissions Submission[]
+}
+
+model Submission {
+  id           Int        @id @default(autoincrement())
+  evaluationId Int
+  userId       BigInt
+  answersJson  Json
+  createdAt    DateTime   @default(now())
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+
+  @@unique([evaluationId, userId])
+}
