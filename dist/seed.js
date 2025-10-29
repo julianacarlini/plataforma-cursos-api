@@ -50,13 +50,15 @@ async function main() {
             roleId: 3,
         },
     });
-    const teacherId = BigInt(prof.id); // BigInt porque seu schema usa BigInt para User.id
+    const teacherId = BigInt(prof.id);
     const adminId = BigInt(admin.id);
     const alunoId = BigInt(aluno.id);
-    //Cursos (APPROVED + com teacherId + imageUrl)
+    //Cursos (APPROVED)
     const alemAO = await prisma.course.upsert({
-        where: { id: 1 }, // só para idempotência; pode remover se preferir
-        update: {},
+        where: { id: 1 },
+        update: {
+            imageUrl: '/images/imagem-curso-alemao.webp'
+        },
         create: {
             title: 'Alemão para iniciantes (A1)',
             description: 'Curso introdutório de alemão: fonética, saudações, verbos básicos e frases do dia a dia.',
@@ -64,7 +66,7 @@ async function main() {
             status: CourseStatus.APPROVED,
             teacherId,
             createdById: teacherId,
-            imageUrl: 'https://picsum.photos/seed/alemao-a1/600/360',
+            imageUrl: '/images/imagem-curso-alemao.webp',
         },
     });
     const web = await prisma.course.upsert({
@@ -80,7 +82,7 @@ async function main() {
             imageUrl: 'https://picsum.photos/seed/webdev/600/360',
         },
     });
-    // Exemplo de curso PENDING (aparece só para admin/professor em telas internas)
+    //Exemplo de curso PENDING (aparece só para admin/professor em telas internas)
     await prisma.course.upsert({
         where: { id: 3 },
         update: {},
@@ -93,7 +95,7 @@ async function main() {
             imageUrl: 'https://picsum.photos/seed/python/600/360',
         },
     });
-    // 4) Aulas + materiais/avaliação (mínimo para testar páginas de aula/avaliação)
+    //Aulas + materiais/avaliação
     const l1 = await prisma.lesson.upsert({
         where: { id: 1 },
         update: {},
@@ -131,13 +133,13 @@ async function main() {
             },
         },
     });
-    // 5) Matrícula do aluno (para aparecer no dashboard e alimentar recomendação)
+    //Matrícula do aluno 
     await prisma.enrollment.upsert({
         where: { userId_courseId: { userId: alunoId, courseId: alemAO.id } },
         update: {},
         create: { userId: alunoId, courseId: alemAO.id },
     });
-    // 6) Evento (calendário)
+    //Evento (calendário)
     await prisma.event.upsert({
         where: { id: 1 },
         update: {},
@@ -149,10 +151,6 @@ async function main() {
             createdById: teacherId,
         },
     });
-    console.log('> Seed concluído.');
-    console.log('Admin:', 'admin@exemplo.com / admin1234');
-    console.log('Professor:', 'prof@exemplo.com / prof1234');
-    console.log('Aluno:', 'aluno@exemplo.com / aluno1234');
 }
 main()
     .catch((e) => {

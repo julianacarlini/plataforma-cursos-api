@@ -4,78 +4,110 @@ import { prisma } from "../prisma.js";
 import { signAccess, signRefresh, verifyRefresh } from "../utils/jwt.js";
 import { validate } from "../middlewares/validate.js";
 import { loginSchema, registerSchema } from "../schemas/auth.schema.js";
-import { AppError } from "../utils/error-handler.js";
+import { AppError, unauthorized } from "../utils/error-handler.js";
 import { auth } from "../middlewares/auth.js";
 const r = Router();
-// Registro (ALUNO/PROFESSOR)
+// POST /api/auth/register  (ALUNO/PROFESSOR)
 r.post("/register", validate(registerSchema), async (req, res, next) => {
     try {
         const { name, email, password, role } = req.body;
-        const roleRow = await prisma.role.findUnique({ where: { name: (role || "ALUNO") } });
+        const roleRow = await prisma.role.findUnique({
+            where: { name: (role || "ALUNO") }
+        });
         if (!roleRow)
             throw new AppError("Papel inválido", 400);
+        const passwordHash = await bcrypt.hash(password, 12);
         const user = await prisma.user.create({
-            data: { name, email, passwordHash: await bcrypt.hash(password, 12), roleId: roleRow.id }
+            data: { name, email, passwordHash, roleId: roleRow.id },
+            include: { role: { select: { name: true } } }
         });
-        res.status(201).json({ message: "Cadastrado", id: user.id, email: user.email });
+        res.status(201).json({
+            message: "Cadastrado",
+            id: user.id.toString(), // <<< nunca envie BigInt
+            name: user.name,
+            email: user.email,
+            role: user.role.name
+        });
     }
     catch (e) {
         next(e);
     }
 });
-// Login
+// POST /api/auth/login
 r.post("/login", validate(loginSchema), async (req, res, next) => {
     try {
         const { email, password } = req.body;
-        const user = await prisma.user.findUnique({ where: { email }, include: { role: { select: { name: true, id: true } } } });
-        if (!user || user.blocked)
+        const user = await prisma.user.findUnique({
+            where: { email },
+            include: { role: { select: { name: true, id: true } } }
+        });
+        if (!user)
             throw new AppError("Credenciais inválidas", 401, "UNAUTHORIZED");
+        if (user.blocked)
+            throw new AppError("Usuário bloqueado", 401, "UNAUTHORIZED");
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok)
             throw new AppError("Credenciais inválidas", 401, "UNAUTHORIZED");
-        if (!user.role) {
-            throw new AppError("Usuário não tem uma permissão definida", 500);
-        }
-        const userIdAsString = user.id.toString();
-        const payload = { id: userIdAsString, name: user.name, email: user.email, role: user.role.name };
-        res.json({ accessToken: signAccess(payload), refreshToken: signRefresh({ id: userIdAsString }) });
+        if (!user.role)
+            throw new AppError("Usuário sem papel definido", 500);
+        const idStr = user.id.toString(); // <<< strings no payload
+        const payload = { id: idStr, name: user.name, email: user.email, role: user.role.name };
+        const access_token = signAccess(payload);
+        const refresh_token = signRefresh({ id: idStr });
+        res.json({
+            access_token,
+            refresh_token,
+            user: { id: idStr, name: user.name, email: user.email, role: user.role.name }
+        });
     }
     catch (e) {
         next(e);
     }
 });
-// Refresh
+// POST /api/auth/refresh
 r.post("/refresh", async (req, res, next) => {
     try {
-        const { refreshToken } = req.body;
-        if (!refreshToken)
+        const { refreshToken, refresh_token } = req.body;
+        const token = refreshToken || refresh_token;
+        if (!token)
             throw new AppError("Token ausente", 401, "UNAUTHORIZED");
-        const data = verifyRefresh(refreshToken);
-        const u = await prisma.user.findUnique({ where: { id: BigInt(data.id) }, include: { role: true } });
+        const data = verifyRefresh(token); // deve conter { id: string }
+        if (!data?.id)
+            throw unauthorized("Token inválido");
+        const u = await prisma.user.findUnique({
+            where: { id: BigInt(data.id) },
+            include: { role: true }
+        });
         if (!u || u.blocked)
             throw new AppError("Não autorizado", 401, "UNAUTHORIZED");
-        const payload = { id: u.id, name: u.name, email: u.email, role: u.role.name };
-        res.json({ accessToken: signAccess(payload) });
+        // Assine sempre com id string
+        const access_token = signAccess({
+            id: u.id.toString(),
+            name: u.name,
+            email: u.email,
+            role: u.role.name
+        });
+        res.json({ access_token });
     }
     catch (e) {
         next(e);
     }
 });
 // GET /api/auth/me
-r.get('/me', auth, async (req, res, next) => {
+r.get("/me", auth, async (req, res, next) => {
     try {
-        const userId = BigInt(req.user.id);
+        const userId = BigInt(req.user.id); // id no JWT é string; aqui convertemos para buscar
         const u = await prisma.user.findUnique({
             where: { id: userId },
             include: { role: { select: { name: true } } }
         });
         if (!u)
-            return res.status(404).json({ error: 'Usuário não encontrado' });
+            return res.status(404).json({ error: "Usuário não encontrado" });
         res.json({
             id: u.id.toString(),
             name: u.name,
             email: u.email,
-            role: u.role.name,
+            role: u.role.name
         });
     }
     catch (e) {
