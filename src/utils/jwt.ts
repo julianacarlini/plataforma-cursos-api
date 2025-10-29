@@ -4,7 +4,7 @@ import jwt, { Secret, SignOptions, JwtPayload } from 'jsonwebtoken'
 const ACCESS_SECRET: Secret  = (process.env.ACCESS_SECRET  ?? process.env.JWT_SECRET  ?? 'dev-access') as Secret
 const REFRESH_SECRET: Secret = (process.env.REFRESH_SECRET ?? process.env.JWT_REFRESH_SECRET ?? 'dev-refresh') as Secret
 
-const ACCESS_EXPIRES : SignOptions['expiresIn']  = (process.env.ACCESS_EXPIRES  ?? '15m') as any
+const ACCESS_EXPIRES : SignOptions['expiresIn']  = (process.env.ACCESS_EXPIRES  ?? '120m') as any
 const REFRESH_EXPIRES: SignOptions['expiresIn']  = (process.env.REFRESH_EXPIRES ?? '7d')  as any
 
 export type TokenPayload = JwtPayload & Record<string, unknown>

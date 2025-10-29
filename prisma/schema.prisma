@@ -1,3 +1,7 @@
+// ---------------------------------------------
+// PRISMA SCHEMA COM CASCADE / SET NULL
+// ---------------------------------------------
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -38,10 +42,10 @@ model User {
 
   // Relacionamentos
   coursesTeaching Course[]     @relation("TeacherCourses")
+  coursesCreated  Course[]     @relation("UserCreatedCourses") // novos: cursos criados por este usuário
   enrollments     Enrollment[]
   submissions     Submission[]
   events          Event[]      @relation("OwnerEvents")
-  Course          Course[]
 }
 
 model Course {
@@ -50,20 +54,25 @@ model Course {
   description String       @db.Text
   category    String
   status      CourseStatus @default(PENDING)
-  teacherId   BigInt? // professor associado para ficar disponível aos alunos
-  teacher     User?        @relation("TeacherCourses", fields: [teacherId], references: [id])
-  createdById BigInt // quem criou (professor)
-  createdBy   User         @relation(fields: [createdById], references: [id])
 
-  imageUrl String? @db.VarChar(500) // <- útil para os cards
+  // professor associado para ficar disponível aos alunos
+  teacherId   BigInt?
+  teacher     User?        @relation("TeacherCourses", fields: [teacherId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
+  // quem criou (professor) — aqui optamos por CASCADE (apagar curso se criador for apagado)
+  createdById BigInt
+  createdBy   User         @relation("UserCreatedCourses", fields: [createdById], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  imageUrl    String?      @db.VarChar(500)
+
+  // relacionamentos filhos do curso — CASCADE para apagar tudo do curso
   lessons     Lesson[]
   enrollments Enrollment[]
   events      Event[]      @relation("CourseEvents")
   evaluations Evaluation[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   @@index([status])
   @@index([teacherId])
@@ -76,8 +85,13 @@ model Enrollment {
   id        Int      @id @default(autoincrement())
   userId    BigInt
   courseId  Int
-  user      User     @relation(fields: [userId], references: [id])
-  course    Course   @relation(fields: [courseId], references: [id])
+
+  // Se usuário for deletado, matrícula some (CASCADE)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Se curso for deletado, matrícula some (CASCADE)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
   createdAt DateTime @default(now())
 
   @@unique([userId, courseId])
@@ -86,15 +100,18 @@ model Enrollment {
 }
 
 model Lesson {
-  id          Int          @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   courseId    Int
   title       String
   order       Int
   videoUrl    String?
-  isPublished Boolean      @default(false)
-  course      Course       @relation(fields: [courseId], references: [id])
+  isPublished Boolean  @default(false)
+
+  // Ao deletar curso, apaga lições (CASCADE)
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
   materials   Material[]
-  evaluations Evaluation[] // avaliações vinculadas à aula (opcional)
+  evaluations Evaluation[]  // avaliações vinculadas à aula (opcional)
 }
 
 model Material {
@@ -102,7 +119,9 @@ model Material {
   lessonId Int
   filename String
   path     String
-  lesson   Lesson @relation(fields: [lessonId], references: [id])
+
+  // Ao deletar aula, apaga materiais (CASCADE)
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 }
 
 model Event {
@@ -112,22 +131,31 @@ model Event {
   startDatetime DateTime
   endDatetime   DateTime
   createdById   BigInt
-  course        Course   @relation("CourseEvents", fields: [courseId], references: [id])
-  createdBy     User     @relation("OwnerEvents", fields: [createdById], references: [id])
+
+  // Ao deletar curso, apaga eventos do curso (CASCADE)
+  course        Course   @relation("CourseEvents", fields: [courseId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Ao deletar usuário (criador do evento), apaga evento (CASCADE)
+  createdBy     User     @relation("OwnerEvents", fields: [createdById], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([courseId])
   @@index([createdById])
 }
 
 model Evaluation {
-  id          Int          @id @default(autoincrement())
+  id          Int        @id @default(autoincrement())
   courseId    Int
   lessonId    Int?
   title       String
-  schemaJson  Json // estrutura do formulário
-  isPublished Boolean      @default(false)
-  course      Course       @relation(fields: [courseId], references: [id])
-  lesson      Lesson?      @relation(fields: [lessonId], references: [id])
+  schemaJson  Json
+  isPublished Boolean    @default(false)
+
+  // Ao deletar curso, apaga avaliações (CASCADE)
+  course      Course     @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Ao deletar lição, apenas remove vínculo (SET NULL) — mantém a avaliação
+  lesson      Lesson?    @relation(fields: [lessonId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
   submissions Submission[]
 }
 
@@ -137,8 +165,12 @@ model Submission {
   userId       BigInt
   answersJson  Json
   createdAt    DateTime   @default(now())
-  evaluation   Evaluation @relation(fields: [evaluationId], references: [id])
-  user         User       @relation(fields: [userId], references: [id])
+
+  // Ao deletar avaliação, apaga submissões (CASCADE)
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Ao deletar usuário, apaga submissões dele (CASCADE)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@unique([evaluationId, userId])
 }
